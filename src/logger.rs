@@ -30,6 +30,7 @@ pub(crate) struct SharedOptions {
     pub(crate) format: LogFormat,
     #[serde(default)]
     pub(crate) line_number: bool,
+    /// Option to include filename in the logging entry.
     #[serde(default)]
     pub(crate) file: bool,
     #[serde(default)]
