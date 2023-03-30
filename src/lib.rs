@@ -52,15 +52,14 @@ impl DynamicLogger {
     }
 
     pub fn init(&self) {
-        if self.config.global.options.enabled {
-            let options = self.config.global.options.clone();
-            let envfilter =
-                EnvFilter::from_default_env().add_directive(self.config.global.log_level.into());
+        let global = &self.config.global;
+        if global.options.enabled {
+            let envfilter = EnvFilter::from_default_env().add_directive(global.log_level.into());
             let layer = fmt::layer()
-                .with_file(options.file)
-                .with_line_number(options.line_number)
-                .with_thread_names(options.thread_name)
-                .with_thread_ids(options.thread_id);
+                .with_file(global.options.file)
+                .with_line_number(global.options.line_number)
+                .with_thread_names(global.options.thread_name)
+                .with_thread_ids(global.options.thread_id);
 
             let env_layer = match self.config.global.options.format {
                 LogFormat::Full => layer.with_filter(envfilter).boxed(),
@@ -83,7 +82,7 @@ impl DynamicLogger {
         let (file_writer, guard) = tracing_appender::non_blocking(appender);
         self.guards.borrow_mut().push(guard);
 
-        let options = entry.options.clone();
+        let options = &entry.options;
         match Targets::from_str(&entry.modules.join(",")) {
             Ok(file_targets) => {
                 let file_layer = fmt::Layer::new()
@@ -117,27 +116,26 @@ pub trait DynamicLogging {
 
 impl DynamicLogging for DynamicLogger {
     fn init_stdout(&self) -> Result<()> {
-        let options = self.config.stream_logger.options.clone();
-        if !self.config.stream_logger.options.enabled {
+        let stream_logger = &self.config.stream_logger;
+        if !stream_logger.options.enabled {
             return Ok(());
         }
 
-        match Targets::from_str(&self.config.stream_logger.modules.join(",")) {
+        match Targets::from_str(&stream_logger.modules.join(",")) {
             Ok(targets) => {
                 let stream_layer = fmt::Layer::new()
                     .with_writer(std::io::stdout)
-                    .with_file(options.file)
-                    .with_line_number(options.line_number)
-                    .with_thread_names(options.thread_name)
-                    .with_thread_ids(options.thread_id);
-                let format = &options.format;
-                let layer = match format {
+                    .with_file(stream_logger.options.file)
+                    .with_line_number(stream_logger.options.line_number)
+                    .with_thread_names(stream_logger.options.thread_name)
+                    .with_thread_ids(stream_logger.options.thread_id);
+                let layer = match stream_logger.options.format {
                     LogFormat::Full => stream_layer
-                        .with_ansi(self.config.stream_logger.color)
+                        .with_ansi(stream_logger.color)
                         .with_filter(targets)
                         .boxed(),
                     LogFormat::Compact => stream_layer
-                        .with_ansi(self.config.stream_logger.color)
+                        .with_ansi(stream_logger.color)
                         .compact()
                         .with_filter(targets)
                         .boxed(),
@@ -151,7 +149,7 @@ impl DynamicLogging for DynamicLogger {
             Err(msg) => {
                 Err(anyhow::anyhow!(
                     "Error parsing file targets. stdout logging failed to initialize, config has errors: {:#?}. Context: {}",
-                    &self.config.stream_logger,
+                    stream_logger,
                     msg
                 ))
             }
