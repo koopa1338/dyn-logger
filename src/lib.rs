@@ -83,43 +83,65 @@ impl DynamicLogger {
         self.guards.borrow_mut().push(guard);
 
         let options = &entry.options;
-        match Targets::from_str(&entry.modules.join(",")) {
-            Ok(file_targets) => {
-                let file_layer = fmt::Layer::new()
-                    .with_writer(file_writer)
-                    .with_ansi(false)
-                    .with_file(options.file)
-                    .with_line_number(options.line_number)
-                    .with_thread_names(options.thread_name)
-                    .with_thread_ids(options.thread_id);
-                let layer = match options.format {
-                    LogFormat::Full => file_layer.with_filter(file_targets).boxed(),
-                    LogFormat::Compact => file_layer.compact().with_filter(file_targets).boxed(),
-                    LogFormat::Pretty => file_layer.pretty().with_filter(file_targets).boxed(),
-                    LogFormat::Json => file_layer.json().with_filter(file_targets).boxed(),
-                };
+        if let Ok(file_targets) = Targets::from_str(&entry.modules.join(",")) {
+            let file_layer = fmt::Layer::new()
+                .with_writer(file_writer)
+                .with_ansi(false)
+                .with_file(options.file)
+                .with_line_number(options.line_number)
+                .with_thread_names(options.thread_name)
+                .with_thread_ids(options.thread_id);
+            let layer = match options.format {
+                LogFormat::Full => file_layer.with_filter(file_targets).boxed(),
+                LogFormat::Compact => file_layer.compact().with_filter(file_targets).boxed(),
+                LogFormat::Pretty => file_layer.pretty().with_filter(file_targets).boxed(),
+                LogFormat::Json => file_layer.json().with_filter(file_targets).boxed(),
+            };
 
-                self.layers.borrow_mut().push(layer);
-                Ok(())
-            }
-            Err(_) => Err(anyhow::anyhow!(
+            self.layers.borrow_mut().push(layer);
+            Ok(())
+        } else {
+            anyhow::bail!(
                 "Error parsing file targets. failed to initialize file logging for {entry:#?}"
-            )),
+            )
         }
     }
 
-    pub fn add_layer(&self, layer: Box<dyn Layer<Registry> + Send + Sync>) {
+    #[must_use]
+    pub fn add_layer(self, layer: Box<dyn Layer<Registry> + Send + Sync>) -> Self {
         self.layers.borrow_mut().push(layer);
+        self
     }
 
-    pub fn add_layers<T>(&self, layers: T)
+    #[must_use]
+    pub fn add_layer_with_stream_logger_targets(
+        self,
+        layer: Box<dyn Layer<Registry> + Send + Sync>,
+    ) -> Self {
+        let kekw = if let Ok(file_targets) =
+            Targets::from_str(&self.config.stream_logger.modules.join(","))
+        {
+            layer.with_filter(file_targets).boxed()
+        } else {
+            layer
+        };
+
+        self.layers.borrow_mut().push(kekw);
+        self
+    }
+
+    #[must_use]
+    pub fn add_layers<T>(self, layers: T) -> Self
     where
         T: IntoIterator<Item = Box<dyn Layer<Registry> + Send + Sync>>,
     {
-        let mut ref_layers = self.layers.borrow_mut();
-        for layer in layers {
-            ref_layers.push(layer);
+        {
+            let mut ref_layers = self.layers.borrow_mut();
+            for layer in layers {
+                ref_layers.push(layer);
+            }
         }
+        self
     }
 }
 
@@ -161,11 +183,11 @@ impl DynamicLogging for DynamicLogger {
                 Ok(())
             }
             Err(msg) => {
-                Err(anyhow::anyhow!(
+                anyhow::bail!(
                     "Error parsing file targets. stdout logging failed to initialize, config has errors: {:#?}. Context: {}",
                     stream_logger,
                     msg
-                ))
+                )
             }
         }
     }
@@ -177,9 +199,7 @@ impl DynamicLogging for DynamicLogger {
             }
             Ok(())
         } else {
-            Err(anyhow::anyhow!(
-                "Error parsing file logger table, there were no entries found."
-            ))
+            anyhow::bail!("Error parsing file logger table, there were no entries found.")
         }
     }
 }
