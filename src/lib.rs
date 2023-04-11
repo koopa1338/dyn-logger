@@ -107,6 +107,20 @@ impl DynamicLogger {
             )),
         }
     }
+
+    pub fn add_layer(&self, layer: Box<dyn Layer<Registry> + Send + Sync>) {
+        self.layers.borrow_mut().push(layer);
+    }
+
+    pub fn add_layers<T>(&self, layers: T)
+    where
+        T: IntoIterator<Item = Box<dyn Layer<Registry> + Send + Sync>>,
+    {
+        let mut ref_layers = self.layers.borrow_mut();
+        for layer in layers {
+            ref_layers.push(layer);
+        }
+    }
 }
 
 pub trait DynamicLogging {
