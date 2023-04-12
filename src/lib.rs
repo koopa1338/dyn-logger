@@ -5,6 +5,7 @@ use std::fmt::Debug;
 use std::fs::{create_dir_all, read_to_string};
 use std::path::Path;
 use std::str::FromStr;
+use tracing::metadata::LevelFilter;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{filter::Targets, fmt, prelude::*, EnvFilter, Layer, Registry};
 
@@ -54,20 +55,39 @@ impl DynamicLogger {
     pub fn init(&self) {
         let global = &self.config.global;
         if global.options.enabled {
-            let envfilter = EnvFilter::from_default_env().add_directive(global.log_level.into());
+            let stream_targets = Targets::from_str(&self.config.stream_logger.modules.join(","))
+                .map(|targets| {
+                    targets
+                        .into_iter()
+                        .map(|(filter, _)| (filter, LevelFilter::OFF))
+                        .collect::<Targets>()
+                });
+
             let layer = fmt::layer()
                 .with_file(global.options.file)
                 .with_line_number(global.options.line_number)
                 .with_thread_names(global.options.thread_name)
                 .with_thread_ids(global.options.thread_id);
 
-            let env_layer = match self.config.global.options.format {
-                LogFormat::Full => layer.with_filter(envfilter).boxed(),
-                LogFormat::Compact => layer.compact().with_filter(envfilter).boxed(),
-                LogFormat::Pretty => layer.pretty().with_filter(envfilter).boxed(),
-                LogFormat::Json => layer.json().with_filter(envfilter).boxed(),
+            let env_layer = match global.options.format {
+                LogFormat::Full => layer.boxed(),
+                LogFormat::Compact => layer.compact().boxed(),
+                LogFormat::Pretty => layer.pretty().boxed(),
+                LogFormat::Json => layer.json().boxed(),
             };
-            self.layers.borrow_mut().push(env_layer);
+
+            let mut ref_layers = self.layers.borrow_mut();
+            if let Ok(st) = stream_targets {
+                ref_layers.push(
+                    env_layer
+                        .with_filter(st.with_default(LevelFilter::from_level(global.log_level)))
+                        .boxed(),
+                );
+            } else {
+                let envfilter =
+                    EnvFilter::from_default_env().add_directive(global.log_level.into());
+                ref_layers.push(env_layer.with_filter(envfilter).boxed());
+            }
         }
 
         tracing_subscriber::registry()
