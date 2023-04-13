@@ -7,7 +7,6 @@ license-file = "LICENSE.md"
 description = "Crate to configure tracing logger dynamically via configuration file in toml format."
 
 [dependencies]
-anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.7"
 tracing = "0.1"
@@ -18,3 +17,4 @@ tracing-subscriber = { version = "0.3", features = [
     "registry",
 ] }
 tracing-appender = "0.2"
+thiserror = "1.0.40"

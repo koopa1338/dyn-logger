@@ -1,4 +1,4 @@
-use anyhow::Result;
+use error::DynLogAPIErr;
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::fmt::Debug;
@@ -9,6 +9,7 @@ use tracing::metadata::LevelFilter;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{filter::Targets, fmt, prelude::*, EnvFilter, Layer, Registry};
 
+mod error;
 mod logger;
 mod utils;
 
@@ -28,8 +29,13 @@ pub struct DynamicLogger {
 }
 
 impl DynamicLogger {
-    pub fn new(path: impl AsRef<Path>) -> Result<Self> {
-        let config = toml::from_str(&read_to_string(path.as_ref())?)?;
+    pub fn new(path: impl AsRef<Path>) -> Result<Self, DynLogAPIErr> {
+        let config = toml::from_str(&read_to_string(path.as_ref()).map_err(|source| {
+            DynLogAPIErr::FileReadError {
+                filename: path.as_ref().to_string_lossy().to_string(),
+                source,
+            }
+        })?)?;
         Ok(Self {
             config,
             layers: RefCell::new(Vec::new()),
@@ -37,7 +43,7 @@ impl DynamicLogger {
         })
     }
 
-    pub fn with_file_logger(self) -> Result<Self> {
+    pub fn with_file_logger(self) -> Result<Self, DynLogAPIErr> {
         if self.config.global.options.enabled {
             self.init_filelogger()?;
         }
@@ -45,7 +51,7 @@ impl DynamicLogger {
         Ok(self)
     }
 
-    pub fn with_stdout(self) -> Result<Self> {
+    pub fn with_stdout(self) -> Result<Self, DynLogAPIErr> {
         if self.config.global.options.enabled {
             self.init_stdout()?;
         }
@@ -61,7 +67,8 @@ impl DynamicLogger {
                         .into_iter()
                         .map(|(filter, _)| (filter, LevelFilter::OFF))
                         .collect::<Targets>()
-                });
+                })
+                .expect(error::TARGET_PARSE_ERROR_MSG);
 
             let layer = fmt::layer()
                 .with_file(global.options.file)
@@ -77,10 +84,12 @@ impl DynamicLogger {
             };
 
             let mut ref_layers = self.layers.borrow_mut();
-            if let Ok(st) = stream_targets {
+            if stream_targets.iter().count() > 0 {
                 ref_layers.push(
                     env_layer
-                        .with_filter(st.with_default(LevelFilter::from_level(global.log_level)))
+                        .with_filter(
+                            stream_targets.with_default(LevelFilter::from_level(global.log_level)),
+                        )
                         .boxed(),
                 );
             } else {
@@ -95,36 +104,35 @@ impl DynamicLogger {
             .init();
     }
 
-    fn register_filelogger_target(&self, entry: &FileLogger) -> Result<()> {
+    fn register_filelogger_target(&self, entry: &FileLogger) -> Result<(), DynLogAPIErr> {
         let log_dir = &entry.path;
-        create_dir_all(log_dir)?;
+        create_dir_all(log_dir).map_err(|source| DynLogAPIErr::CreateLogDirError {
+            path: log_dir.to_string_lossy().to_string(),
+            source,
+        })?;
         let appender = tracing_appender::rolling::never(log_dir, &entry.filename);
         let (file_writer, guard) = tracing_appender::non_blocking(appender);
         self.guards.borrow_mut().push(guard);
 
         let options = &entry.options;
-        if let Ok(file_targets) = Targets::from_str(&entry.modules.join(",")) {
-            let file_layer = fmt::Layer::new()
-                .with_writer(file_writer)
-                .with_ansi(false)
-                .with_file(options.file)
-                .with_line_number(options.line_number)
-                .with_thread_names(options.thread_name)
-                .with_thread_ids(options.thread_id);
-            let layer = match options.format {
-                LogFormat::Full => file_layer.with_filter(file_targets).boxed(),
-                LogFormat::Compact => file_layer.compact().with_filter(file_targets).boxed(),
-                LogFormat::Pretty => file_layer.pretty().with_filter(file_targets).boxed(),
-                LogFormat::Json => file_layer.json().with_filter(file_targets).boxed(),
-            };
+        let file_targets =
+            Targets::from_str(&entry.modules.join(",")).expect(error::TARGET_PARSE_ERROR_MSG);
+        let file_layer = fmt::Layer::new()
+            .with_writer(file_writer)
+            .with_ansi(false)
+            .with_file(options.file)
+            .with_line_number(options.line_number)
+            .with_thread_names(options.thread_name)
+            .with_thread_ids(options.thread_id);
+        let layer = match options.format {
+            LogFormat::Full => file_layer.with_filter(file_targets).boxed(),
+            LogFormat::Compact => file_layer.compact().with_filter(file_targets).boxed(),
+            LogFormat::Pretty => file_layer.pretty().with_filter(file_targets).boxed(),
+            LogFormat::Json => file_layer.json().with_filter(file_targets).boxed(),
+        };
 
-            self.layers.borrow_mut().push(layer);
-            Ok(())
-        } else {
-            anyhow::bail!(
-                "Error parsing file targets. failed to initialize file logging for {entry:#?}"
-            )
-        }
+        self.layers.borrow_mut().push(layer);
+        Ok(())
     }
 
     #[must_use]
@@ -138,12 +146,14 @@ impl DynamicLogger {
         self,
         layer: Box<dyn Layer<Registry> + Send + Sync>,
     ) -> Self {
-        let kekw = if let Ok(file_targets) =
-            Targets::from_str(&self.config.stream_logger.modules.join(","))
-        {
-            layer.with_filter(file_targets).boxed()
-        } else {
-            layer
+        let kekw = {
+            let file_targets = Targets::from_str(&self.config.stream_logger.modules.join(","))
+                .expect(error::TARGET_PARSE_ERROR_MSG);
+            if file_targets.iter().count() > 0 {
+                layer.with_filter(file_targets).boxed()
+            } else {
+                layer
+            }
         };
 
         self.layers.borrow_mut().push(kekw);
@@ -166,60 +176,53 @@ impl DynamicLogger {
 }
 
 pub trait DynamicLogging {
-    fn init_stdout(&self) -> Result<()>;
-    fn init_filelogger(&self) -> Result<()>;
+    type Error;
+    fn init_stdout(&self) -> Result<(), Self::Error>;
+    fn init_filelogger(&self) -> Result<(), Self::Error>;
 }
 
 impl DynamicLogging for DynamicLogger {
-    fn init_stdout(&self) -> Result<()> {
+    type Error = DynLogAPIErr;
+    fn init_stdout(&self) -> Result<(), Self::Error> {
         let stream_logger = &self.config.stream_logger;
         if !stream_logger.options.enabled {
             return Ok(());
         }
 
-        match Targets::from_str(&stream_logger.modules.join(",")) {
-            Ok(targets) => {
-                let stream_layer = fmt::Layer::new()
-                    .with_writer(std::io::stdout)
-                    .with_file(stream_logger.options.file)
-                    .with_line_number(stream_logger.options.line_number)
-                    .with_thread_names(stream_logger.options.thread_name)
-                    .with_thread_ids(stream_logger.options.thread_id);
-                let layer = match stream_logger.options.format {
-                    LogFormat::Full => stream_layer
-                        .with_ansi(stream_logger.color)
-                        .with_filter(targets)
-                        .boxed(),
-                    LogFormat::Compact => stream_layer
-                        .with_ansi(stream_logger.color)
-                        .compact()
-                        .with_filter(targets)
-                        .boxed(),
-                    LogFormat::Pretty => stream_layer.pretty().with_filter(targets).boxed(),
-                    LogFormat::Json => stream_layer.json().with_filter(targets).boxed(),
-                };
+        let targets = Targets::from_str(&stream_logger.modules.join(",")).expect("");
+        let stream_layer = fmt::Layer::new()
+            .with_writer(std::io::stdout)
+            .with_file(stream_logger.options.file)
+            .with_line_number(stream_logger.options.line_number)
+            .with_thread_names(stream_logger.options.thread_name)
+            .with_thread_ids(stream_logger.options.thread_id);
+        let layer = match stream_logger.options.format {
+            LogFormat::Full => stream_layer
+                .with_ansi(stream_logger.color)
+                .with_filter(targets)
+                .boxed(),
+            LogFormat::Compact => stream_layer
+                .with_ansi(stream_logger.color)
+                .compact()
+                .with_filter(targets)
+                .boxed(),
+            LogFormat::Pretty => stream_layer.pretty().with_filter(targets).boxed(),
+            LogFormat::Json => stream_layer.json().with_filter(targets).boxed(),
+        };
 
-                self.layers.borrow_mut().push(layer);
-                Ok(())
-            }
-            Err(msg) => {
-                anyhow::bail!(
-                    "Error parsing file targets. stdout logging failed to initialize, config has errors: {:#?}. Context: {}",
-                    stream_logger,
-                    msg
-                )
-            }
-        }
+        self.layers.borrow_mut().push(layer);
+        Ok(())
     }
 
-    fn init_filelogger(&self) -> Result<()> {
-        if let Some(file_logger_table) = &self.config.file_logger {
-            for entry in file_logger_table.iter().filter(|file| file.options.enabled) {
-                self.register_filelogger_target(entry)?;
-            }
-            Ok(())
-        } else {
-            anyhow::bail!("Error parsing file logger table, there were no entries found.")
+    fn init_filelogger(&self) -> Result<(), Self::Error> {
+        let file_logger_table = &self
+            .config
+            .file_logger
+            .as_ref()
+            .ok_or(DynLogAPIErr::InitializeFileloggerError)?;
+        for entry in file_logger_table.iter().filter(|file| file.options.enabled) {
+            self.register_filelogger_target(entry)?;
         }
+        Ok(())
     }
 }
