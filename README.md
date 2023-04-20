@@ -13,7 +13,7 @@ To use this crate, simply add it as a dependency to your Cargo.toml file:
 
 ```toml
 [dependencies]
-dyn-logger = "0.1"
+dyn-logger = "0.2"
 ```
 
 Then, configure your logger as shown below. This will read the logging.toml
