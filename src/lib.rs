@@ -9,7 +9,7 @@ use tracing::metadata::LevelFilter;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{filter::Targets, fmt, prelude::*, EnvFilter, Layer, Registry};
 
-mod error;
+pub mod error;
 mod logger;
 mod utils;
 
