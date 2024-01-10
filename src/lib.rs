@@ -146,7 +146,7 @@ impl DynamicLogger {
         self,
         layer: Box<dyn Layer<Registry> + Send + Sync>,
     ) -> Self {
-        let kekw = {
+        let target_layer = {
             let file_targets = Targets::from_str(&self.config.stream_logger.modules.join(","))
                 .expect(error::TARGET_PARSE_ERROR_MSG);
             if file_targets.iter().count() > 0 {
@@ -156,7 +156,7 @@ impl DynamicLogger {
             }
         };
 
-        self.layers.borrow_mut().push(kekw);
+        self.layers.borrow_mut().push(target_layer);
         self
     }
 

@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
 ## Configuration
 
 The logging.toml file allows you to configure the logging options for your
-application. Here is an example [logging.toml]("./logging.toml.sample").
+application. Here is an example [logging.toml](./logging.toml.sample).
 
 # License
 
