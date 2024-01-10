@@ -36,7 +36,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
 ## Configuration
 
 The logging.toml file allows you to configure the logging options for your
-application. Here is an example [logging.toml](./logging.toml.sample).
+application. Here is an example:
+
+```toml
+# global logging options
+[global]
+log_level = "trace"
+enabled = false
+format = "compact" # Options: `full`, `compact`, `pretty` and `json`
+line_number = true
+file = true
+thread_name = true
+thread_id = true
+
+ # special std out logging, overrides global settings
+[stream_logger]
+enabled = true
+color = true
+format = "pretty" # Options: `full`, `compact`, `pretty` and `json`
+line_number = true
+file = true
+thread_name = true
+thread_id = true
+modules = [
+    "module=trace",
+    "module::submodule_one=trace",
+    "module::submodule_two=debug",
+    "module::submodule_three=info",
+]
+
+# logging to files, uses global options
+[[file_logger]]
+enabled = true
+filename = "logfile.log"
+path = "./logs"
+line_number = false # override global options
+thread_id = false # override global options
+format = "json" # Options: `full`, `compact`, `pretty` and `json`
+modules = [
+    "module_name::submodule::example=trace",
+]
+
+[[file_logger]]
+enabled = true
+filename = "another_logfile.log"
+path = "./logs"
+format = "compact" # Options: `full`, `compact`, `pretty` and `json`
+modules = [
+    "module_name::submodule=trace",
+    "module_name::other_submodule=debug",
+]
+```
 
 # License
 
