@@ -1,6 +1,6 @@
 [package]
 name = "dyn-logger"
-version = "0.2.7"
+version = "1.0.0"
 edition = "2024"
 authors = ["koopa1338 <sinner1991@gmail.com>"]
 license = "EUPL-1.2"
