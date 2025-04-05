@@ -1,13 +1,15 @@
 use error::DynLogAPIErr;
 use serde::Deserialize;
-use std::cell::RefCell;
-use std::fmt::Debug;
-use std::fs::{create_dir_all, read_to_string};
-use std::path::Path;
-use std::str::FromStr;
+use std::{
+    cell::RefCell,
+    fmt::Debug,
+    fs::{create_dir_all, read_to_string},
+    path::Path,
+    str::FromStr,
+};
 use tracing::metadata::LevelFilter;
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{filter::Targets, fmt, prelude::*, EnvFilter, Layer, Registry};
+use tracing_subscriber::{EnvFilter, Layer, Registry, filter::Targets, fmt, prelude::*};
 
 pub mod error;
 mod logger;
