@@ -13,7 +13,7 @@ To use this crate, simply add it as a dependency to your Cargo.toml file:
 
 ```toml
 [dependencies]
-dyn-logger = "0.2"
+dyn-logger = "1.0"
 ```
 
 Then, configure your logger as shown below. This will read the logging.toml
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>>  {
     let logger = DynamicLogger::new("path/to/logging.toml")?
         .with_stdout()?
         .with_file_logger()?;
-    logger.init();
+    logger.init()?;
 
     // ...
 

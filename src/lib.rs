@@ -58,7 +58,7 @@ impl DynamicLogger {
         Ok(self)
     }
 
-    pub fn init(&self) {
+    pub fn init(&self) -> Result<(), DynLogAPIErr> {
         let global = &self.config.global;
         if global.options.enabled {
             let stream_targets = Targets::from_str(&self.config.stream_logger.modules.join(","))
@@ -67,8 +67,7 @@ impl DynamicLogger {
                         .into_iter()
                         .map(|(filter, _)| (filter, LevelFilter::OFF))
                         .collect::<Targets>()
-                })
-                .expect(error::TARGET_PARSE_ERROR_MSG);
+                })?;
 
             let layer = fmt::layer()
                 .with_file(global.options.file)
@@ -102,6 +101,8 @@ impl DynamicLogger {
         tracing_subscriber::registry()
             .with(self.layers.take())
             .init();
+
+        Ok(())
     }
 
     fn register_filelogger_target(&self, entry: &FileLogger) -> Result<(), DynLogAPIErr> {
@@ -115,8 +116,7 @@ impl DynamicLogger {
         self.guards.borrow_mut().push(guard);
 
         let options = &entry.options;
-        let file_targets =
-            Targets::from_str(&entry.modules.join(",")).expect(error::TARGET_PARSE_ERROR_MSG);
+        let file_targets = Targets::from_str(&entry.modules.join(","))?;
         let file_layer = fmt::Layer::new()
             .with_writer(file_writer)
             .with_ansi(false)
@@ -145,10 +145,9 @@ impl DynamicLogger {
     pub fn add_layer_with_stream_logger_targets(
         self,
         layer: Box<dyn Layer<Registry> + Send + Sync>,
-    ) -> Self {
+    ) -> Result<Self, DynLogAPIErr> {
         let target_layer = {
-            let file_targets = Targets::from_str(&self.config.stream_logger.modules.join(","))
-                .expect(error::TARGET_PARSE_ERROR_MSG);
+            let file_targets = Targets::from_str(&self.config.stream_logger.modules.join(","))?;
             if file_targets.iter().count() > 0 {
                 layer.with_filter(file_targets).boxed()
             } else {
@@ -157,7 +156,8 @@ impl DynamicLogger {
         };
 
         self.layers.borrow_mut().push(target_layer);
-        self
+
+        Ok(self)
     }
 
     #[must_use]

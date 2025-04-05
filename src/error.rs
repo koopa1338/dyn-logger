@@ -1,7 +1,6 @@
 use std::io;
 use thiserror::Error;
-
-pub(crate) const TARGET_PARSE_ERROR_MSG: &str = "Error parsing modules, this should never happen";
+use tracing_subscriber::filter::ParseError;
 
 #[derive(Error, Debug)]
 pub enum DynLogAPIErr {
@@ -13,4 +12,6 @@ pub enum DynLogAPIErr {
     TomlDeserializeError(#[from] toml::de::Error),
     #[error("Error parsing file logger table, there were no entries found.")]
     InitializeFileloggerError,
+    #[error("Error parsing targets, there may be an issue with the declared modules.")]
+    TargetParseError(#[from] ParseError),
 }
